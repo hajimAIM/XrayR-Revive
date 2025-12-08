@@ -432,37 +432,29 @@ func (c *Controller) addNewUser(userInfo *[]api.UserInfo, nodeInfo *api.NodeInfo
 }
 
 func compareUserList(old, new *[]api.UserInfo) (deleted, added []api.UserInfo) {
-	mSrc := make(map[api.UserInfo]byte) // 按源数组建索引
-	mAll := make(map[api.UserInfo]byte) // 源+目所有元素建索引
+	// Use maps to track unique users efficiently
+	oldMap := make(map[api.UserInfo]struct{})
+	newMap := make(map[api.UserInfo]struct{})
 
-	var set []api.UserInfo // 交集
-
-	// 1.源数组建立map
-	for _, v := range *old {
-		mSrc[v] = 0
-		mAll[v] = 0
+	// Populate maps
+	for _, u := range *old {
+		oldMap[u] = struct{}{}
 	}
-	// 2.目数组中，存不进去，即重复元素，所有存不进去的集合就是并集
-	for _, v := range *new {
-		l := len(mAll)
-		mAll[v] = 1
-		if l != len(mAll) { // 长度变化，即可以存
-			l = len(mAll)
-		} else { // 存不了，进并集
-			set = append(set, v)
+	for _, u := range *new {
+		newMap[u] = struct{}{}
+	}
+
+	// Find deleted users (present in old but not in new)
+	for _, u := range *old {
+		if _, exists := newMap[u]; !exists {
+			deleted = append(deleted, u)
 		}
 	}
-	// 3.遍历交集，在并集中找，找到就从并集中删，删完后就是补集（即并-交=所有变化的元素）
-	for _, v := range set {
-		delete(mAll, v)
-	}
-	// 4.此时，mall是补集，所有元素去源中找，找到就是删除的，找不到的必定能在目数组中找到，即新加的
-	for v := range mAll {
-		_, exist := mSrc[v]
-		if exist {
-			deleted = append(deleted, v)
-		} else {
-			added = append(added, v)
+
+	// Find added users (present in new but not in old)
+	for _, u := range *new {
+		if _, exists := oldMap[u]; !exists {
+			added = append(added, u)
 		}
 	}
 
