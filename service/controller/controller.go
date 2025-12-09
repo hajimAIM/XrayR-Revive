@@ -359,7 +359,7 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 			if err != nil {
 				c.logger.Warningf("Observatory: Failed to get observation: %s", err)
 			} else {
-				jsonBytes, _ := protojson.Marshal(result)
+				jsonBytes, _ := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(result)
 				c.logger.Infof("Observatory: Current observation status: %s", string(jsonBytes))
 			}
 		}

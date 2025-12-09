@@ -1,0 +1,15 @@
+131: 				dest, err := v2net.ParseDestination(network + ":" + addr)
+132: 				if err != nil {
+133: 					return errors.New("cannot understand address").Base(err)
+134: 				}
+135: 				trackedCtx := session.TrackedConnectionError(o.ctx, errorCollectorForRequest)
+136: 				conn, err := tagged.Dialer(trackedCtx, o.dispatcher, dest, outbound)
+137: 				if err != nil {
+138: 					return errors.New("cannot dial remote address ", dest).Base(err)
+139: 				}
+140: 				connection = conn
+141: 				return nil
+142: 			})
+143: 			if taskErr != nil {
+144: 				return nil, errors.New("cannot finish connection").Base(taskErr)
+145: 			}
