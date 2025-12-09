@@ -136,6 +136,22 @@ func (p *Panel) loadCore(panelConfig *Config) *core.Instance {
 	corePolicyConfig := &conf.PolicyConfig{}
 	corePolicyConfig.Levels = map[uint32]*conf.Policy{0: levelPolicyConfig}
 	policyConfig, _ := corePolicyConfig.Build()
+	// Observatory config
+	coreObservatoryConfig := &conf.ObservatoryConfig{}
+	if panelConfig.ObservatoryConfigPath != "" {
+		if data, err := os.ReadFile(panelConfig.ObservatoryConfigPath); err != nil {
+			log.Panicf("Failed to read Observatory config file at: %s", panelConfig.ObservatoryConfigPath)
+		} else {
+			if err = json.Unmarshal(data, coreObservatoryConfig); err != nil {
+				log.Panicf("Failed to unmarshal Observatory config: %s", panelConfig.ObservatoryConfigPath)
+			}
+		}
+	}
+	observatoryConfig, err := coreObservatoryConfig.Build()
+	if err != nil {
+		log.Panicf("Failed to understand Observatory config: %s", err)
+	}
+
 	// Build Core Config
 	config := &core.Config{
 		App: []*serial.TypedMessage{
@@ -148,6 +164,7 @@ func (p *Panel) loadCore(panelConfig *Config) *core.Instance {
 			serial.ToTypedMessage(policyConfig),
 			serial.ToTypedMessage(dnsConfig),
 			serial.ToTypedMessage(routeConfig),
+			serial.ToTypedMessage(observatoryConfig),
 		},
 		Inbound:  inBoundConfig,
 		Outbound: outBoundConfig,
