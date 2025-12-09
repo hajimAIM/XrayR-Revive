@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -354,11 +355,20 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 		}
 
 		if c.obs != nil {
-			if result, err := c.obs.GetObservation(context.Background()); err != nil {
-				c.logger.Warningf("Observatory: Failed to get observation: %s. This outbound might not be load-balanced correctly.", err)
+			result, err := c.obs.GetObservation(context.Background())
+			if err != nil {
+				c.logger.Warningf("Observatory: Failed to get observation: %s", err)
 			} else {
-				c.logger.Infof("Observatory: Current observation status: %s", result)
+				jsonBytes, _ := json.Marshal(result)
+				c.logger.Infof("Observatory: Current observation status: %s", string(jsonBytes))
 			}
+		}
+
+		// Debug: check if custom outbound exists
+		if c.obm.GetHandler("wg-my-1") == nil {
+			c.logger.Warningf("Debug: 'wg-my-1' outbound handler NOT FOUND in OutboundManager")
+		} else {
+			c.logger.Infof("Debug: 'wg-my-1' outbound handler found in OutboundManager")
 		}
 
 	} else {
