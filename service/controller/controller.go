@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -17,6 +16,7 @@ import (
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/XrayR-project/XrayR/api"
 	"github.com/XrayR-project/XrayR/app/mydispatcher"
@@ -359,7 +359,7 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 			if err != nil {
 				c.logger.Warningf("Observatory: Failed to get observation: %s", err)
 			} else {
-				jsonBytes, _ := json.Marshal(result)
+				jsonBytes, _ := protojson.Marshal(result)
 				c.logger.Infof("Observatory: Current observation status: %s", string(jsonBytes))
 			}
 		}
