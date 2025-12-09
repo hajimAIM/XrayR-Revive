@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -16,7 +15,6 @@ import (
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/XrayR-project/XrayR/api"
 	"github.com/XrayR-project/XrayR/app/mydispatcher"
@@ -352,23 +350,6 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 		if err != nil {
 
 			return err
-		}
-
-		if c.obs != nil {
-			result, err := c.obs.GetObservation(context.Background())
-			if err != nil {
-				c.logger.Warningf("Observatory: Failed to get observation: %s", err)
-			} else {
-				jsonBytes, _ := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(result)
-				c.logger.Infof("Observatory: Current observation status: %s", string(jsonBytes))
-			}
-		}
-
-		// Debug: check if custom outbound exists
-		if c.obm.GetHandler("wg-my-1") == nil {
-			c.logger.Warningf("Debug: 'wg-my-1' outbound handler NOT FOUND in OutboundManager")
-		} else {
-			c.logger.Infof("Debug: 'wg-my-1' outbound handler found in OutboundManager")
 		}
 
 	} else {
