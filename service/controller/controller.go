@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/task"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
 	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
@@ -43,6 +45,7 @@ type Controller struct {
 	obm          outbound.Manager
 	stm          stats.Manager
 	pm           policy.Manager
+	obs          extension.Observatory
 	dispatcher   *mydispatcher.DefaultDispatcher
 	startAt      time.Time
 	logger       *log.Entry
@@ -72,6 +75,10 @@ func New(server *core.Instance, api api.API, config *Config, panelType string) *
 		dispatcher: server.GetFeature(mydispatcher.Type()).(*mydispatcher.DefaultDispatcher),
 		startAt:    time.Now(),
 		logger:     logger,
+	}
+
+	if obs := server.GetFeature(extension.ObservatoryType()); obs != nil {
+		controller.obs = obs.(extension.Observatory)
 	}
 
 	return controller
@@ -344,6 +351,14 @@ func (c *Controller) addNewTag(newNodeInfo *api.NodeInfo) (err error) {
 		if err != nil {
 
 			return err
+		}
+
+		if c.obs != nil {
+			if result, err := c.obs.GetObservation(context.Background()); err != nil {
+				c.logger.Warningf("Observatory: Failed to get observation: %s. This outbound might not be load-balanced correctly.", err)
+			} else {
+				c.logger.Infof("Observatory: Current observation status: %s", result)
+			}
 		}
 
 	} else {
