@@ -9,11 +9,13 @@ import (
 	"github.com/r3labs/diff/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/xtls/xray-core/app/dispatcher"
+	_ "github.com/xtls/xray-core/app/observatory"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/stats"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf"
+	_ "github.com/xtls/xray-core/transport/internet/tagged/taggedimpl"
 
 	"github.com/XrayR-project/XrayR/api"
 	"github.com/XrayR-project/XrayR/api/bunpanel"
