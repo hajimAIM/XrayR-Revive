@@ -35,12 +35,22 @@ var errSniffingTimeout = newError("timeout on sniffing")
 
 type cachedReader struct {
 	sync.Mutex
-	reader *pipe.Reader
+	reader buf.Reader
 	cache  buf.MultiBuffer
 }
 
 func (r *cachedReader) Cache(b *buf.Buffer) {
-	mb, _ := r.reader.ReadMultiBufferTimeout(time.Millisecond * 100)
+	var mb buf.MultiBuffer
+	if tr, ok := r.reader.(buf.TimeoutReader); ok {
+		mb, _ = tr.ReadMultiBufferTimeout(time.Millisecond * 100)
+	} else {
+		// Fallback for readers not supporting timeout (e.g. buf.BufferedReader)
+		// We use a non-blocking check if possible, or just attempt read.
+		// Since this is for sniffing, we prefer not to block indefinitely if no data.
+		// However, standard buf.Reader doesn't support "Peek" easily with MultiBuffer.
+		// We'll trust that data is arriving soon if we are sniffing.
+		mb, _ = r.reader.ReadMultiBuffer()
+	}
 	r.Lock()
 	if !mb.IsEmpty() {
 		r.cache, _ = buf.MergeMulti(r.cache, mb)
@@ -80,7 +90,10 @@ func (r *cachedReader) ReadMultiBufferTimeout(timeout time.Duration) (buf.MultiB
 		return mb, nil
 	}
 
-	return r.reader.ReadMultiBufferTimeout(timeout)
+	if tr, ok := r.reader.(buf.TimeoutReader); ok {
+		return tr.ReadMultiBufferTimeout(timeout)
+	}
+	return r.reader.ReadMultiBuffer()
 }
 
 func (r *cachedReader) Interrupt() {
@@ -89,7 +102,7 @@ func (r *cachedReader) Interrupt() {
 		r.cache = buf.ReleaseMulti(r.cache)
 	}
 	r.Unlock()
-	r.reader.Interrupt()
+	common.Interrupt(r.reader)
 }
 
 // DefaultDispatcher is a custom implementation that embeds the official dispatcher
@@ -148,7 +161,7 @@ func (d *DefaultDispatcher) Init(config *Config, om outbound.Manager, router rou
 
 // Type implements common.HasType for registering as a separate feature, not overriding core dispatcher.
 func (*DefaultDispatcher) Type() interface{} {
-	return Type()
+	return routing.DispatcherType()
 }
 
 // Start implements common.Runnable.
@@ -284,7 +297,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	} else {
 		go func() {
 			cReader := &cachedReader{
-				reader: outbound.Reader.(*pipe.Reader),
+				reader: outbound.Reader,
 			}
 			outbound.Reader = cReader
 			result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
@@ -331,7 +344,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	} else {
 		go func() {
 			cReader := &cachedReader{
-				reader: outbound.Reader.(*pipe.Reader),
+				reader: outbound.Reader,
 			}
 			outbound.Reader = cReader
 			result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
