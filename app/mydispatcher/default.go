@@ -48,6 +48,8 @@ type cachedReader struct {
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	var mb buf.MultiBuffer
 
+	// DEBUG
+	fmt.Printf("Cache called. Pending: %v\n", r.pending != nil)
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
 		mb, _ = tr.ReadMultiBufferTimeout(time.Millisecond * 100)
 	} else {
@@ -55,8 +57,10 @@ func (r *cachedReader) Cache(b *buf.Buffer) {
 		r.Lock()
 		if r.pending == nil {
 			r.pending = make(chan readResult, 1)
+			fmt.Println("Spawning background read...")
 			go func() {
 				mb, err := r.reader.ReadMultiBuffer()
+				fmt.Printf("Background read finished. MB: %v, Err: %v\n", mb != nil, err)
 				r.pending <- readResult{mb, err}
 			}()
 		}
@@ -356,6 +360,7 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Dispatching. Outbound.Reader Type: %T\n", outbound.Reader)
 	if !sniffingRequest.Enabled {
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {
@@ -406,6 +411,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	if !sniffingRequest.Enabled {
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {
+		fmt.Printf("DispatchLink Sniffing. Reader Type: %T\n", outbound.Reader)
 		go func() {
 			cReader := &cachedReader{
 				reader: outbound.Reader,
