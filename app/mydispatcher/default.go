@@ -110,6 +110,7 @@ func (r *cachedReader) readInternal() buf.MultiBuffer {
 }
 
 func (r *cachedReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
+	fmt.Println("ReadMultiBuffer called")
 	mb := r.readInternal()
 	if mb != nil {
 		return mb, nil
@@ -417,7 +418,9 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 				reader: outbound.Reader,
 			}
 			outbound.Reader = cReader
+			fmt.Println("Calling sniffer...")
 			result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
+			fmt.Printf("Sniffer returned. Err: %v\n", err)
 			if err == nil {
 				content.Protocol = result.Protocol()
 			}
@@ -431,6 +434,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 					ob.Target = destination
 				}
 			}
+			fmt.Println("Proceeding to routedDispatch...")
 			d.routedDispatch(ctx, outbound, destination)
 		}()
 	}
@@ -439,18 +443,23 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 }
 
 func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, network net.Network) (SniffResult, error) {
+	fmt.Println("sniffer: Function entered")
 	payload := buf.New()
 	defer payload.Release()
 
 	sniffer := NewSniffer(ctx)
 
+	fmt.Println("sniffer: Calling SniffMetadata")
 	metaresult, metadataErr := sniffer.SniffMetadata(ctx)
+	fmt.Printf("sniffer: SniffMetadata done. Err: %v\n", metadataErr)
 
 	if metadataOnly {
 		return metaresult, metadataErr
 	}
 
+	// ...
 	contentResult, contentErr := func() (SniffResult, error) {
+		fmt.Println("sniffer: Entering content sniffing loop")
 		totalAttempt := 0
 		for {
 			select {
@@ -462,7 +471,9 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 					return nil, errSniffingTimeout
 				}
 
+				fmt.Println("sniffer: Calling cReader.Cache")
 				cReader.Cache(payload)
+				fmt.Printf("sniffer: Cache returned. Payload empty: %v\n", payload.IsEmpty())
 				if !payload.IsEmpty() {
 					result, err := sniffer.Sniff(ctx, payload.Bytes(), network)
 					if err != common.ErrNoClue {
