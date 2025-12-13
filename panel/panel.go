@@ -8,7 +8,6 @@ import (
 	"dario.cat/mergo"
 	"github.com/r3labs/diff/v2"
 	log "github.com/sirupsen/logrus"
-	"github.com/xtls/xray-core/app/dispatcher"
 	_ "github.com/xtls/xray-core/app/observatory"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/stats"
@@ -158,7 +157,7 @@ func (p *Panel) loadCore(panelConfig *Config) *core.Instance {
 	config := &core.Config{
 		App: []*serial.TypedMessage{
 			serial.ToTypedMessage(coreLogConfig.Build()),
-			serial.ToTypedMessage(&dispatcher.Config{}),
+			// serial.ToTypedMessage(&dispatcher.Config{}),
 			serial.ToTypedMessage(&mydispatcher.Config{}),
 			serial.ToTypedMessage(&stats.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
