@@ -33,49 +33,54 @@ import (
 
 var errSniffingTimeout = newError("timeout on sniffing")
 
+type readResult struct {
+	mb  buf.MultiBuffer
+	err error
+}
+
 type cachedReader struct {
 	sync.Mutex
-	reader buf.Reader
-	cache  buf.MultiBuffer
+	reader  buf.Reader
+	cache   buf.MultiBuffer
+	pending chan readResult // Future for pending read
 }
 
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	var mb buf.MultiBuffer
+
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
 		mb, _ = tr.ReadMultiBufferTimeout(time.Millisecond * 100)
 	} else {
 		// Fallback for readers not supporting timeout (e.g. buf.BufferedReader)
-		// Implement manual timeout using goroutine
-		type readResult struct {
-			mb  buf.MultiBuffer
-			err error
+		r.Lock()
+		if r.pending == nil {
+			r.pending = make(chan readResult, 1)
+			go func() {
+				mb, err := r.reader.ReadMultiBuffer()
+				r.pending <- readResult{mb, err}
+			}()
 		}
-		ch := make(chan readResult, 1)
-		go func() {
-			mb, err := r.reader.ReadMultiBuffer()
-			ch <- readResult{mb, err}
-		}()
+		pending := r.pending
+		r.Unlock()
 
 		select {
-		case res := <-ch:
+		case res := <-pending:
 			mb = res.mb
+			r.Lock()
+			// If we consumed the result, allow new reads
+			// But wait, if multiple Cache calls happen, we might race?
+			// Cache calls are sequential from sniffer.
+			// If we got result, clear pending so next call starts new read.
+			if r.pending == pending {
+				r.pending = nil
+			}
+			r.Unlock()
 		case <-time.After(time.Millisecond * 100):
-			// Timeout, assume no data yet
-			// Note: The goroutine leaks if ReadMultiBuffer blocks forever,
-			// but buf.Reader usually returns on connection close.
-			// Ideally we should use a method to cancel read, but standard Reader interface doesn't support it.
-			// Given this is for sniffing, leaking a goroutine per connection *during sniffing* is a trade-off.
-			// However, since we are inside a repeated loop in sniffer, this could be bad.
-			// BUT: sniffer loop has its own timeout and calls Cace repeatedly.
-			// We effectively poll.
-			// To avoid leak, we should probably not spawn a new goroutine every time if one is pending?
-			// For now, let's implement a simplified non-blocking attempt:
-			// Actually, sniffer loop invokes Cache repeatedly. If we block here, we block the loop.
-			// If we spawn, we risk accumulation.
-			// Optimally, cachedReader should maintain the "pending read" state.
-			// However, for immediate fix, we'll use the timeout.
+			// Timeout: leave pending active.
+			// Background read continues. Next Cache or ReadMultiBuffer will pick it up.
 		}
 	}
+
 	r.Lock()
 	if !mb.IsEmpty() {
 		r.cache, _ = buf.MergeMulti(r.cache, mb)
@@ -106,6 +111,22 @@ func (r *cachedReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 		return mb, nil
 	}
 
+	// Check if there is a pending read
+	r.Lock()
+	pending := r.pending
+	r.Unlock()
+
+	if pending != nil {
+		// We must wait for the pending read to ensure linear stream
+		res := <-pending
+		r.Lock()
+		if r.pending == pending {
+			r.pending = nil
+		}
+		r.Unlock()
+		return res.mb, res.err
+	}
+
 	return r.reader.ReadMultiBuffer()
 }
 
@@ -113,6 +134,24 @@ func (r *cachedReader) ReadMultiBufferTimeout(timeout time.Duration) (buf.MultiB
 	mb := r.readInternal()
 	if mb != nil {
 		return mb, nil
+	}
+
+	r.Lock()
+	pending := r.pending
+	r.Unlock()
+
+	if pending != nil {
+		select {
+		case res := <-pending:
+			r.Lock()
+			if r.pending == pending {
+				r.pending = nil
+			}
+			r.Unlock()
+			return res.mb, res.err
+		case <-time.After(timeout):
+			return nil, buf.ErrReadTimeout
+		}
 	}
 
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
