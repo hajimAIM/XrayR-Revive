@@ -42,16 +42,12 @@ type cachedReader struct {
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	var mb buf.MultiBuffer
 
-	// DEBUG
-	// DEBUG
-	fmt.Printf("Cache called.\n")
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
 		mb, _ = tr.ReadMultiBufferTimeout(time.Millisecond * 100)
 	} else {
 		// Fallback for readers not supporting timeout (e.g. buf.BufferedReader)
 		// We simply skip sniffing to avoid blocking the thread or losing data.
 		// This ensures connectivity at the cost of sniffing for these specific readers.
-		fmt.Println("Cache: Reader is not TimeoutReader, skipping sniff to avoid block.")
 	}
 
 	r.Lock()
@@ -79,7 +75,6 @@ func (r *cachedReader) readInternal() buf.MultiBuffer {
 }
 
 func (r *cachedReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
-	fmt.Println("ReadMultiBuffer called")
 	mb := r.readInternal()
 	if mb != nil {
 		return mb, nil
@@ -296,7 +291,9 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Dispatching. Outbound.Reader Type: %T\n", outbound.Reader)
+	if err != nil {
+		return nil, err
+	}
 	if !sniffingRequest.Enabled {
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {
@@ -347,15 +344,13 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 	if !sniffingRequest.Enabled {
 		go d.routedDispatch(ctx, outbound, destination)
 	} else {
-		fmt.Printf("DispatchLink Sniffing. Reader Type: %T\n", outbound.Reader)
 		go func() {
 			cReader := &cachedReader{
 				reader: outbound.Reader,
 			}
 			outbound.Reader = cReader
-			fmt.Println("Calling sniffer...")
+			outbound.Reader = cReader
 			result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
-			fmt.Printf("Sniffer returned. Err: %v\n", err)
 			if err == nil {
 				content.Protocol = result.Protocol()
 			}
@@ -369,7 +364,6 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 					ob.Target = destination
 				}
 			}
-			fmt.Println("Proceeding to routedDispatch...")
 			d.routedDispatch(ctx, outbound, destination)
 		}()
 	}
@@ -378,23 +372,18 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 }
 
 func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, network net.Network) (SniffResult, error) {
-	fmt.Println("sniffer: Function entered")
 	payload := buf.New()
 	defer payload.Release()
 
 	sniffer := NewSniffer(ctx)
 
-	fmt.Println("sniffer: Calling SniffMetadata")
 	metaresult, metadataErr := sniffer.SniffMetadata(ctx)
-	fmt.Printf("sniffer: SniffMetadata done. Err: %v\n", metadataErr)
 
 	if metadataOnly {
 		return metaresult, metadataErr
 	}
 
-	// ...
 	contentResult, contentErr := func() (SniffResult, error) {
-		fmt.Println("sniffer: Entering content sniffing loop")
 		totalAttempt := 0
 		for {
 			select {
@@ -406,9 +395,7 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 					return nil, errSniffingTimeout
 				}
 
-				fmt.Println("sniffer: Calling cReader.Cache")
 				cReader.Cache(payload)
-				fmt.Printf("sniffer: Cache returned. Payload empty: %v\n", payload.IsEmpty())
 				if !payload.IsEmpty() {
 					result, err := sniffer.Sniff(ctx, payload.Bytes(), network)
 					if err != common.ErrNoClue {
