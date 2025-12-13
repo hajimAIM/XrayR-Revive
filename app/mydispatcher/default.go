@@ -33,56 +33,25 @@ import (
 
 var errSniffingTimeout = newError("timeout on sniffing")
 
-type readResult struct {
-	mb  buf.MultiBuffer
-	err error
-}
-
 type cachedReader struct {
 	sync.Mutex
-	reader  buf.Reader
-	cache   buf.MultiBuffer
-	pending chan readResult // Future for pending read
+	reader buf.Reader
+	cache  buf.MultiBuffer
 }
 
 func (r *cachedReader) Cache(b *buf.Buffer) {
 	var mb buf.MultiBuffer
 
 	// DEBUG
-	fmt.Printf("Cache called. Pending: %v\n", r.pending != nil)
+	// DEBUG
+	fmt.Printf("Cache called.\n")
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
 		mb, _ = tr.ReadMultiBufferTimeout(time.Millisecond * 100)
 	} else {
 		// Fallback for readers not supporting timeout (e.g. buf.BufferedReader)
-		r.Lock()
-		if r.pending == nil {
-			r.pending = make(chan readResult, 1)
-			fmt.Println("Spawning background read...")
-			go func() {
-				mb, err := r.reader.ReadMultiBuffer()
-				fmt.Printf("Background read finished. MB: %v, Err: %v\n", mb != nil, err)
-				r.pending <- readResult{mb, err}
-			}()
-		}
-		pending := r.pending
-		r.Unlock()
-
-		select {
-		case res := <-pending:
-			mb = res.mb
-			r.Lock()
-			// If we consumed the result, allow new reads
-			// But wait, if multiple Cache calls happen, we might race?
-			// Cache calls are sequential from sniffer.
-			// If we got result, clear pending so next call starts new read.
-			if r.pending == pending {
-				r.pending = nil
-			}
-			r.Unlock()
-		case <-time.After(time.Millisecond * 100):
-			// Timeout: leave pending active.
-			// Background read continues. Next Cache or ReadMultiBuffer will pick it up.
-		}
+		// We simply skip sniffing to avoid blocking the thread or losing data.
+		// This ensures connectivity at the cost of sniffing for these specific readers.
+		fmt.Println("Cache: Reader is not TimeoutReader, skipping sniff to avoid block.")
 	}
 
 	r.Lock()
@@ -116,22 +85,6 @@ func (r *cachedReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 		return mb, nil
 	}
 
-	// Check if there is a pending read
-	r.Lock()
-	pending := r.pending
-	r.Unlock()
-
-	if pending != nil {
-		// We must wait for the pending read to ensure linear stream
-		res := <-pending
-		r.Lock()
-		if r.pending == pending {
-			r.pending = nil
-		}
-		r.Unlock()
-		return res.mb, res.err
-	}
-
 	return r.reader.ReadMultiBuffer()
 }
 
@@ -139,24 +92,6 @@ func (r *cachedReader) ReadMultiBufferTimeout(timeout time.Duration) (buf.MultiB
 	mb := r.readInternal()
 	if mb != nil {
 		return mb, nil
-	}
-
-	r.Lock()
-	pending := r.pending
-	r.Unlock()
-
-	if pending != nil {
-		select {
-		case res := <-pending:
-			r.Lock()
-			if r.pending == pending {
-				r.pending = nil
-			}
-			r.Unlock()
-			return res.mb, res.err
-		case <-time.After(timeout):
-			return nil, buf.ErrReadTimeout
-		}
 	}
 
 	if tr, ok := r.reader.(buf.TimeoutReader); ok {
